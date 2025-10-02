@@ -1,0 +1,330 @@
+#include <Arduino.h>
+#include "MotorController.h"
+#include "OmniWheelDrive.h"
+
+// ===== PIN CONFIGURATION =====
+// Motor 1 (Back - 90°)
+#define MOTOR1_PWM    D9
+#define MOTOR1_DIR1   D7
+#define MOTOR1_DIR2   D8
+#define MOTOR1_ENC_A  D12
+#define MOTOR1_ENC_B  D11
+
+// Motor 2 (Front-Left - 330°)
+#define MOTOR2_PWM    D0
+#define MOTOR2_DIR1   A3
+#define MOTOR2_DIR2   A4
+#define MOTOR2_ENC_A  A0
+#define MOTOR2_ENC_B  A1
+
+// Motor 3 (Front-Right - 210°)
+#define MOTOR3_PWM    D1
+#define MOTOR3_DIR1   A6
+#define MOTOR3_DIR2   A3
+#define MOTOR3_ENC_A  D6
+#define MOTOR3_ENC_B  D4
+
+// ===== PID TUNING PARAMETERS =====
+// Adjust these values based on your motors and robot characteristics
+#define KP 2.0    // Proportional gain
+#define KI 5.0    // Integral gain
+#define KD 0.1    // Derivative gain
+
+// ===== ROBOT DIMENSIONS =====
+#define WHEEL_RADIUS 0.05   // Wheel radius in meters (50mm)
+#define ROBOT_RADIUS 0.15   // Distance from center to wheel in meters (150mm)
+
+// ===== MOTOR & ENCODER SPECIFICATIONS =====
+// Encoder: 64 CPR (counts per revolution)
+// Gear Ratio: 18.75:1
+// Effective output shaft resolution: 64 × 18.75 = 1200 counts/rev
+// These values are defined in MotorController.h
+
+// ===== GLOBAL OBJECTS =====
+MotorController motor1(MOTOR1_PWM, MOTOR1_DIR1, MOTOR1_DIR2, 
+                       MOTOR1_ENC_A, MOTOR1_ENC_B, KP, KI, KD);
+MotorController motor2(MOTOR2_PWM, MOTOR2_DIR1, MOTOR2_DIR2,
+                       MOTOR2_ENC_A, MOTOR2_ENC_B, KP, KI, KD);
+MotorController motor3(MOTOR3_PWM, MOTOR3_DIR1, MOTOR3_DIR2,
+                       MOTOR3_ENC_A, MOTOR3_ENC_B, KP, KI, KD);
+
+OmniWheelDrive robot(&motor1, &motor2, &motor3, WHEEL_RADIUS, ROBOT_RADIUS);
+
+// ===== SERIAL COMMAND BUFFER =====
+String commandBuffer = "";
+bool commandComplete = false;
+
+// ===== ENCODER INTERRUPT HANDLERS =====
+void motor1EncoderA_ISR() {
+  motor1.handleEncoderA();
+}
+
+void motor1EncoderB_ISR() {
+  motor1.handleEncoderB();
+}
+
+void motor2EncoderA_ISR() {
+  motor2.handleEncoderA();
+}
+
+void motor2EncoderB_ISR() {
+  motor2.handleEncoderB();
+}
+
+void motor3EncoderA_ISR() {
+  motor3.handleEncoderA();
+}
+
+void motor3EncoderB_ISR() {
+  motor3.handleEncoderB();
+}
+
+// ===== SETUP =====
+void setup() {
+  // Initialize serial communication for debugging
+  Serial.begin(115200);
+  while (!Serial && millis() < 3000); // Wait for serial or timeout
+  
+  Serial.println("=== 3-Wheel Omni Robot PID Controller ===");
+  Serial.println("Initializing...");
+  
+  // Initialize the robot
+  robot.begin();
+  
+  // Attach encoder interrupts
+  attachInterrupt(digitalPinToInterrupt(MOTOR1_ENC_A), motor1EncoderA_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(MOTOR1_ENC_B), motor1EncoderB_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(MOTOR2_ENC_A), motor2EncoderA_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(MOTOR2_ENC_B), motor2EncoderB_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(MOTOR3_ENC_A), motor3EncoderA_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(MOTOR3_ENC_B), motor3EncoderB_ISR, CHANGE);
+  
+  Serial.println("Initialization complete!");
+  Serial.println("\n=== Serial Protocol ===");
+  Serial.println("Format: COMMAND[,param1,param2,...]");
+  Serial.println("\nRaspberry Pi Commands:");
+  Serial.println("  VEL,vx,vy,omega  - Set velocity (m/s, m/s, rad/s)");
+  Serial.println("  STOP             - Stop all motors");
+  Serial.println("  STATUS           - Get robot status");
+  Serial.println("  PID,kp,ki,kd     - Update PID gains");
+  Serial.println("\nManual Test Commands (legacy):");
+  Serial.println("  w/s - Forward/Backward  |  a/d - Left/Right");
+  Serial.println("  q/e - Rotate CCW/CW     |  x - Stop  |  i - Info");
+  Serial.println();
+  
+  delay(1000);
+}
+
+// ===== MAIN LOOP =====
+void loop() {
+  // Update all motor controllers (PID computation)
+  robot.update();
+  
+  // Read serial data into buffer
+  while (Serial.available() > 0) {
+    char inChar = (char)Serial.read();
+    
+    if (inChar == '\n' || inChar == '\r') {
+      if (commandBuffer.length() > 0) {
+        commandComplete = true;
+      }
+    } else {
+      commandBuffer += inChar;
+    }
+  }
+  
+  // Process complete command
+  if (commandComplete) {
+    processCommand(commandBuffer);
+    commandBuffer = "";
+    commandComplete = false;
+  }
+  
+  // Small delay to prevent overwhelming the CPU
+  delay(10);
+}
+
+// ===== COMMAND PROCESSING =====
+void processCommand(String cmd) {
+  cmd.trim();
+  cmd.toUpperCase();
+  
+  // Parse structured commands (for Raspberry Pi)
+  if (cmd.startsWith("VEL,")) {
+    handleVelocityCommand(cmd);
+  }
+  else if (cmd == "STOP") {
+    robot.stopAll();
+    Serial.println("OK:STOPPED");
+  }
+  else if (cmd == "STATUS") {
+    sendStatus();
+  }
+  else if (cmd.startsWith("PID,")) {
+    handlePIDCommand(cmd);
+  }
+  // Legacy single-character commands (for manual testing)
+  else if (cmd.length() == 1) {
+    handleLegacyCommand(cmd.charAt(0));
+  }
+  else {
+    Serial.println("ERROR:UNKNOWN_COMMAND");
+  }
+}
+
+void handleVelocityCommand(String cmd) {
+  // Parse: VEL,vx,vy,omega
+  int firstComma = cmd.indexOf(',');
+  int secondComma = cmd.indexOf(',', firstComma + 1);
+  int thirdComma = cmd.indexOf(',', secondComma + 1);
+  
+  if (firstComma == -1 || secondComma == -1 || thirdComma == -1) {
+    Serial.println("ERROR:INVALID_VEL_FORMAT");
+    return;
+  }
+  
+  float vx = cmd.substring(firstComma + 1, secondComma).toFloat();
+  float vy = cmd.substring(secondComma + 1, thirdComma).toFloat();
+  float omega = cmd.substring(thirdComma + 1).toFloat();
+  
+  robot.setVelocity(vx, vy, omega);
+  
+  Serial.print("OK:VEL_SET,");
+  Serial.print(vx, 3);
+  Serial.print(",");
+  Serial.print(vy, 3);
+  Serial.print(",");
+  Serial.println(omega, 3);
+}
+
+void handlePIDCommand(String cmd) {
+  // Parse: PID,kp,ki,kd
+  int firstComma = cmd.indexOf(',');
+  int secondComma = cmd.indexOf(',', firstComma + 1);
+  int thirdComma = cmd.indexOf(',', secondComma + 1);
+  
+  if (firstComma == -1 || secondComma == -1 || thirdComma == -1) {
+    Serial.println("ERROR:INVALID_PID_FORMAT");
+    return;
+  }
+  
+  float kp = cmd.substring(firstComma + 1, secondComma).toFloat();
+  float ki = cmd.substring(secondComma + 1, thirdComma).toFloat();
+  float kd = cmd.substring(thirdComma + 1).toFloat();
+  
+  motor1.setPIDGains(kp, ki, kd);
+  motor2.setPIDGains(kp, ki, kd);
+  motor3.setPIDGains(kp, ki, kd);
+  
+  Serial.print("OK:PID_SET,");
+  Serial.print(kp, 3);
+  Serial.print(",");
+  Serial.print(ki, 3);
+  Serial.print(",");
+  Serial.println(kd, 3);
+}
+
+void sendStatus() {
+  // Send status in structured format for Raspberry Pi parsing
+  float vx, vy, omega;
+  robot.getCurrentVelocity(vx, vy, omega);
+  
+  Serial.print("STATUS:");
+  Serial.print(vx, 3);
+  Serial.print(",");
+  Serial.print(vy, 3);
+  Serial.print(",");
+  Serial.print(omega, 3);
+  Serial.print(",");
+  Serial.print(motor1.getCurrentSpeed(), 2);
+  Serial.print(",");
+  Serial.print(motor2.getCurrentSpeed(), 2);
+  Serial.print(",");
+  Serial.print(motor3.getCurrentSpeed(), 2);
+  Serial.print(",");
+  Serial.print(motor1.getEncoderCount());
+  Serial.print(",");
+  Serial.print(motor2.getEncoderCount());
+  Serial.print(",");
+  Serial.println(motor3.getEncoderCount());
+}
+
+void handleLegacyCommand(char cmd) {
+  float vx = 0, vy = 0, omega = 0;
+  
+  switch (cmd) {
+    case 'W': // Forward
+      vx = 0.5;
+      Serial.println("OK:FORWARD");
+      break;
+    case 'S': // Backward
+      vx = -0.5;
+      Serial.println("OK:BACKWARD");
+      break;
+    case 'A': // Left
+      vy = 0.5;
+      Serial.println("OK:LEFT");
+      break;
+    case 'D': // Right
+      vy = -0.5;
+      Serial.println("OK:RIGHT");
+      break;
+    case 'Q': // Rotate CCW
+      omega = 1.0;
+      Serial.println("OK:ROTATE_CCW");
+      break;
+    case 'E': // Rotate CW
+      omega = -1.0;
+      Serial.println("OK:ROTATE_CW");
+      break;
+    case 'X': // Stop
+      robot.stopAll();
+      Serial.println("OK:STOPPED");
+      return;
+    case 'I': // Info
+      printRobotInfo();
+      return;
+    default:
+      Serial.println("ERROR:UNKNOWN_LEGACY_COMMAND");
+      return;
+  }
+  
+  robot.setVelocity(vx, vy, omega);
+}
+
+// ===== HELPER FUNCTIONS =====
+void printRobotInfo() {
+  Serial.println("\n=== Robot Status ===");
+  
+  Serial.print("Motor 1 - Target: ");
+  Serial.print(motor1.getTargetSpeed());
+  Serial.print(" RPM, Current: ");
+  Serial.print(motor1.getCurrentSpeed());
+  Serial.print(" RPM, Encoder: ");
+  Serial.println(motor1.getEncoderCount());
+  
+  Serial.print("Motor 2 - Target: ");
+  Serial.print(motor2.getTargetSpeed());
+  Serial.print(" RPM, Current: ");
+  Serial.print(motor2.getCurrentSpeed());
+  Serial.print(" RPM, Encoder: ");
+  Serial.println(motor2.getEncoderCount());
+  
+  Serial.print("Motor 3 - Target: ");
+  Serial.print(motor3.getTargetSpeed());
+  Serial.print(" RPM, Current: ");
+  Serial.print(motor3.getCurrentSpeed());
+  Serial.print(" RPM, Encoder: ");
+  Serial.println(motor3.getEncoderCount());
+  
+  float vx, vy, omega;
+  robot.getCurrentVelocity(vx, vy, omega);
+  Serial.print("Robot Velocity - Vx: ");
+  Serial.print(vx);
+  Serial.print(" m/s, Vy: ");
+  Serial.print(vy);
+  Serial.print(" m/s, Omega: ");
+  Serial.print(omega);
+  Serial.println(" rad/s");
+  Serial.println();
+}

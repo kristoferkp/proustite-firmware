@@ -2,7 +2,6 @@
 #define MOTOR_CONTROLLER_H
 
 #include "PIDController.h"
-#include <Arduino.h>
 
 class MotorController
 {
@@ -13,20 +12,14 @@ private:
     int encoderPinA; // Encoder channel A
     int encoderPinB; // Encoder channel B
 
-    volatile long encoderCount;                   // Current encoder count (accessed in ISR)
-    volatile unsigned long lastEncoderChangeTime; // Time of last encoder change (for sanity check)
-    float currentSpeed;                           // Current speed in RPM or units/sec
-    float targetSpeed;                            // Target speed
+    volatile long encoderCount; // Current encoder count
+    float currentSpeed;         // Current speed in RPM or units/sec
+    float targetSpeed;          // Target speed
 
     PIDController pid; // PID controller for this motor
 
     unsigned long lastSpeedCalcTime;
     long lastEncoderCount;
-
-    // Encoder sanity check
-    bool encoderHealthy;
-    unsigned long lastEncoderHealthCheck;
-    static constexpr unsigned long ENCODER_TIMEOUT_MS = 500; // If no change in 500ms while moving, flag error
 
     // Hardware specifications
     static constexpr int ENCODER_CPR = 64;                                   // Encoder counts per revolution (base encoder)
@@ -51,7 +44,6 @@ public:
     float getCurrentSpeed() const { return currentSpeed; }
     float getTargetSpeed() const { return targetSpeed; }
     long getEncoderCount() const { return getEncoderCountAtomic(); }
-    bool isEncoderHealthy() const { return encoderHealthy; }
 
     void setPIDGains(float Kp, float Ki, float Kd);
     void resetPID();

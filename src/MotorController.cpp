@@ -5,9 +5,8 @@ MotorController::MotorController(int pwm, int dir1, int dir2, int encA, int encB
                                  float Kp, float Ki, float Kd)
     : pwmPin(pwm), dirPin1(dir1), dirPin2(dir2),
       encoderPinA(encA), encoderPinB(encB),
-      encoderCount(0), lastEncoderChangeTime(0), currentSpeed(0), targetSpeed(0),
-      pid(Kp, Ki, Kd), lastSpeedCalcTime(0), lastEncoderCount(0),
-      encoderHealthy(true), lastEncoderHealthCheck(0)
+      encoderCount(0), currentSpeed(0), targetSpeed(0),
+      pid(Kp, Ki, Kd), lastSpeedCalcTime(0), lastEncoderCount(0)
 {
 }
 
@@ -52,7 +51,7 @@ void MotorController::update()
 
     if (dt >= 0.05)
     { // Update every 50ms
-        // SAFETY: Use atomic read for encoder count
+        // Use atomic read for encoder count
         long currentEncoderCount = getEncoderCountAtomic();
         long countDiff = currentEncoderCount - lastEncoderCount;
 
@@ -64,42 +63,9 @@ void MotorController::update()
 
         lastEncoderCount = currentEncoderCount;
         lastSpeedCalcTime = currentTime;
-
-        // SAFETY: Encoder sanity check
-        // If motor is commanded to move but encoder hasn't changed in a while, flag error
-        if (currentTime - lastEncoderHealthCheck > 200) // Check every 200ms
-        {
-            unsigned long timeSinceLastChange;
-            noInterrupts();
-            timeSinceLastChange = currentTime - lastEncoderChangeTime;
-            interrupts();
-
-            // If target speed is significant but no encoder changes detected
-            if (abs(targetSpeed) > 10.0 && timeSinceLastChange > ENCODER_TIMEOUT_MS)
-            {
-                encoderHealthy = false;
-                // Stop motor for safety
-                analogWrite(pwmPin, 0);
-                digitalWrite(dirPin1, LOW);
-                digitalWrite(dirPin2, LOW);
-                return;
-            }
-            else if (abs(targetSpeed) < 1.0 || timeSinceLastChange < ENCODER_TIMEOUT_MS)
-            {
-                encoderHealthy = true; // Reset health flag if stopped or encoder is working
-            }
-
-            lastEncoderHealthCheck = currentTime;
-        }
     }
 
-    // SAFETY: If encoder is unhealthy, don't run motor
-    if (!encoderHealthy)
-    {
-        return;
-    }
-
-    // SAFETY: If target speed is zero, stop immediately without PID
+    // If target speed is zero, stop immediately without PID
     if (abs(targetSpeed) < 0.01)
     {
         analogWrite(pwmPin, 0);
@@ -137,9 +103,6 @@ void MotorController::stop()
 
 void MotorController::handleEncoderA()
 {
-    // Record time of encoder change for health monitoring
-    lastEncoderChangeTime = millis();
-
     // Read encoder state
     bool stateA = digitalRead(encoderPinA);
     bool stateB = digitalRead(encoderPinB);
@@ -157,9 +120,6 @@ void MotorController::handleEncoderA()
 
 void MotorController::handleEncoderB()
 {
-    // Record time of encoder change for health monitoring
-    lastEncoderChangeTime = millis();
-
     // Read encoder state
     bool stateA = digitalRead(encoderPinA);
     bool stateB = digitalRead(encoderPinB);
@@ -174,7 +134,6 @@ void MotorController::handleEncoderB()
         encoderCount--;
     }
 }
-
 void MotorController::setPIDGains(float Kp, float Ki, float Kd)
 {
     pid.setGains(Kp, Ki, Kd);

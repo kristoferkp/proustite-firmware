@@ -67,7 +67,6 @@ void processCommand(String cmd);
 void handleVelocityCommand(String cmd);
 void handlePIDCommand(String cmd);
 void sendStatus();
-void handleLegacyCommand(char cmd);
 void printRobotInfo();
 
 // ===== ENCODER INTERRUPT HANDLERS =====
@@ -134,14 +133,7 @@ void setup()
   Serial.println("  STOP             - Stop all motors");
   Serial.println("  STATUS           - Get robot status");
   Serial.println("  PID,kp,ki,kd     - Update PID gains");
-  Serial.println("\nManual Test Commands (legacy):");
-  Serial.println("  w/s - Forward/Backward  |  a/d - Left/Right");
-  Serial.println("  q/e - Rotate CCW/CW     |  x - Stop  |  i - Info");
   Serial.println("\nSAFETY: Motors will stop if no command received for 1 second");
-  Serial.println("SAFETY: Maximum motor speed limited to 350 RPM (66% of 530 RPM max)");
-  Serial.println("SAFETY: Acceleration limiting enabled (2.0 m/s², 3.0 rad/s²)");
-  Serial.println("SAFETY: Input velocity validation and clamping enabled");
-  Serial.println("SAFETY: Encoder health monitoring active (500ms timeout)");
   Serial.println();
 
   delay(1000);
@@ -156,24 +148,6 @@ void loop()
 {
   // Check watchdog timer for safety
   checkWatchdog();
-
-  // SAFETY: Check encoder health and stop if encoders fail
-  if (!motor1.isEncoderHealthy() || !motor2.isEncoderHealthy() || !motor3.isEncoderHealthy())
-  {
-    if (motorsEnabled)
-    {
-      emergencyStop();
-      Serial.println("ERROR:ENCODER_FAILURE - Motors stopped");
-
-      // Report which encoder(s) failed
-      if (!motor1.isEncoderHealthy())
-        Serial.println("ERROR:Motor 1 encoder unhealthy");
-      if (!motor2.isEncoderHealthy())
-        Serial.println("ERROR:Motor 2 encoder unhealthy");
-      if (!motor3.isEncoderHealthy())
-        Serial.println("ERROR:Motor 3 encoder unhealthy");
-    }
-  }
 
   // Update all motor controllers (PID computation) only if enabled
   if (motorsEnabled)
@@ -234,11 +208,6 @@ void processCommand(String cmd)
   else if (cmd.startsWith("PID,"))
   {
     handlePIDCommand(cmd);
-  }
-  // Legacy single-character commands (for manual testing)
-  else if (cmd.length() == 1)
-  {
-    handleLegacyCommand(cmd.charAt(0));
   }
   else
   {
@@ -329,63 +298,7 @@ void sendStatus()
   Serial.print(",");
   Serial.print(motor2.getEncoderCount());
   Serial.print(",");
-  Serial.print(motor3.getEncoderCount());
-  Serial.print(",");
-  // SAFETY: Add encoder health status
-  Serial.print(motor1.isEncoderHealthy() ? "1" : "0");
-  Serial.print(",");
-  Serial.print(motor2.isEncoderHealthy() ? "1" : "0");
-  Serial.print(",");
-  Serial.println(motor3.isEncoderHealthy() ? "1" : "0");
-}
-
-void handleLegacyCommand(char cmd)
-{
-  float vx = 0, vy = 0, omega = 0;
-
-  switch (cmd)
-  {
-  case 'W':   // Forward
-    vx = 0.3; // Increased for better visibility
-    Serial.println("OK:FORWARD");
-    break;
-  case 'S':    // Backward
-    vx = -0.3; // Increased for better visibility
-    Serial.println("OK:BACKWARD");
-    break;
-  case 'A':   // Left
-    vy = 0.3; // Increased for better visibility
-    Serial.println("OK:LEFT");
-    break;
-  case 'D':    // Right
-    vy = -0.3; // Increased for better visibility
-    Serial.println("OK:RIGHT");
-    break;
-  case 'Q':      // Rotate CCW
-    omega = 1.0; // Increased for better visibility
-    Serial.println("OK:ROTATE_CCW");
-    break;
-  case 'E':       // Rotate CW
-    omega = -1.0; // Increased for better visibility
-    Serial.println("OK:ROTATE_CW");
-    break;
-  case 'X': // Stop
-    emergencyStop();
-    Serial.println("OK:STOPPED");
-    return;
-  case 'I': // Info
-    printRobotInfo();
-    return;
-  default:
-    Serial.println("ERROR:UNKNOWN_LEGACY_COMMAND");
-    return;
-  }
-
-  // Update watchdog and enable motors
-  lastCommandTime = millis();
-  motorsEnabled = true;
-
-  robot.setVelocity(vx, vy, omega);
+  Serial.println(motor3.getEncoderCount());
 }
 
 // ===== HELPER FUNCTIONS =====
@@ -426,14 +339,6 @@ void printRobotInfo()
 
   Serial.print("Motors Enabled: ");
   Serial.println(motorsEnabled ? "YES" : "NO");
-
-  // SAFETY: Report encoder health
-  Serial.print("Motor 1 Encoder: ");
-  Serial.println(motor1.isEncoderHealthy() ? "HEALTHY" : "UNHEALTHY");
-  Serial.print("Motor 2 Encoder: ");
-  Serial.println(motor2.isEncoderHealthy() ? "HEALTHY" : "UNHEALTHY");
-  Serial.print("Motor 3 Encoder: ");
-  Serial.println(motor3.isEncoderHealthy() ? "HEALTHY" : "UNHEALTHY");
 
   unsigned long timeSinceCommand = millis() - lastCommandTime;
   Serial.print("Time since last command: ");

@@ -18,14 +18,6 @@ private:
     float vy; // Linear velocity in y direction (left/right)
     float w;  // Angular velocity (rotation)
 
-    // SAFETY: Acceleration limiting
-    float targetVx; // Target velocity after ramping
-    float targetVy;
-    float targetW;
-    unsigned long lastUpdateTime;
-    static constexpr float MAX_LINEAR_ACCEL = 2.0;  // m/s² - max linear acceleration
-    static constexpr float MAX_ANGULAR_ACCEL = 3.0; // rad/s² - max angular acceleration
-
 public:
     OmniWheelDrive(MotorController *m1, MotorController *m2, MotorController *m3,
                    float wheelR = 0.05, float robotR = 0.15);
@@ -55,9 +47,6 @@ private:
     // Forward kinematics: convert wheel speeds to robot velocity
     void forwardKinematics(float w1, float w2, float w3,
                            float &vx, float &vy, float &omega);
-
-    // SAFETY: Apply acceleration limits to velocity changes
-    void applyAccelerationLimits(float &current, float target, float maxAccel, float dt);
 };
 
 #endif

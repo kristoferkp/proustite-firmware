@@ -4,11 +4,6 @@
 #include "OmniWheelDrive.h"
 
 // ===== PIN CONFIGURATION =====
-// Drone ESC
-#define DRONE_ESC_PIN A5
-#define DRONE_STOP_US 1500
-#define DRONE_CW_US 1550   // Slow Clockwise
-#define DRONE_CCW_US 1450  // Slow Counter-Clockwise
 
 // Motor 1 - Front-Left at 300° (5π/3)
 #define MOTOR1_PWM D9
@@ -58,9 +53,6 @@ MotorController motor3(MOTOR3_PWM, MOTOR3_DIR1, MOTOR3_DIR2,
 
 OmniWheelDrive robot(&motor1, &motor2, &motor3, WHEEL_RADIUS, ROBOT_RADIUS);
 
-// ===== DRONE ESC =====
-Servo droneServo;
-
 // ===== SERIAL COMMAND BUFFER =====
 String commandBuffer = "";
 bool commandComplete = false;
@@ -73,7 +65,6 @@ bool motorsEnabled = false;
 // ===== FUNCTION DECLARATIONS =====
 void checkWatchdog();
 void emergencyStop();
-void handleDroneCommand(String cmd);
 void processCommand(String cmd);
 void handleVelocityCommand(String cmd);
 void handlePIDCommand(String cmd);
@@ -124,9 +115,6 @@ void setup()
 
   // Initialize the robot
   robot.begin();
-Initialize Drone ESC
-  droneServo.attach(DRONE_ESC_PIN);
-  droneServo.writeMicroseconds(DRONE_STOP_US); // Send stop signal to arm ESC
 
   // 
   // Attach encoder interrupts
@@ -140,7 +128,6 @@ Initialize Drone ESC
   Serial.println("Initialization complete!");
   Serial.println("\n=== Serial Protocol ===");
   Serial.println("Format: COMMAND[,param1,param2,...]");
-  Serial.println("\nDRONE,action     - Control drone motor (CW, CCW, STOP)");
   Serial.println("  Raspberry Pi Commands:");
   Serial.println("  VEL,vx,vy,omega  - Set velocity (m/s, m/s, rad/s)");
   Serial.println("                     Example: VEL,0.3,0,0 (moderate forward)");
@@ -211,10 +198,6 @@ void processCommand(String cmd)
   if (cmd.startsWith("VEL,"))
   {
     handleVelocityCommand(cmd);
-  }
-  else if (cmd.startsWith("DRONE,"))
-  {
-    handleDroneCommand(cmd);
   }
   else if (cmd == "STOP")
   {
@@ -293,41 +276,6 @@ void handlePIDCommand(String cmd)
   Serial.print(ki, 3);
   Serial.print(",");
   Serial.println(kd, 3);
-}
-
-void handleDroneCommand(String cmd)
-{
-  // Parse: DRONE,action
-  int firstComma = cmd.indexOf(',');
-  if (firstComma == -1)
-  {
-    Serial.println("ERROR:INVALID_DRONE_FORMAT");
-    return;
-  }
-
-  String action = cmd.substring(firstComma + 1);
-  action.trim();
-  action.toUpperCase();
-
-  if (action == "CW")
-  {
-    droneServo.writeMicroseconds(DRONE_CW_US);
-    Serial.println("OK:DRONE_CW");
-  }
-  else if (action == "CCW")
-  {
-    droneServo.writeMicroseconds(DRONE_CCW_US);
-    Serial.println("OK:DRONE_CCW");
-  }
-  else if (action == "STOP")
-  {
-    droneServo.writeMicroseconds(DRONE_STOP_US);
-    Serial.println("OK:DRONE_STOPPED");
-  }
-  else
-  {
-    Serial.println("ERROR:UNKNOWN_DRONE_ACTION");
-  }
 }
 
 void sendStatus()
@@ -417,7 +365,6 @@ void emergencyStop()
 {
   motorsEnabled = false;
   robot.stopAll();
-  droneServo.writeMicroseconds(DRONE_STOP_US);
   // Reset PID controllers to prevent integral windup
   motor1.resetPID();
   motor2.resetPID();

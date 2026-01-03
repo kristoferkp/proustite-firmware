@@ -1,13 +1,22 @@
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+#include <ESP32Servo.h>
 
-// Pin definitions
+// --- MPU6050 Pin definitions ---
 #define SDA_PIN 2
 #define SCL_PIN 15
 
-// MPU6050 instance
+// --- ESC Pin definitions & Constants ---
+const int ESC_PIN = 13;
+const int ESC_MIN_PULSE     = 1000; // Full Reverse
+const int ESC_NEUTRAL_PULSE = 1500; // Stop / Neutral
+const int ESC_MAX_PULSE     = 2000; // Full Forward
+
+// --- Global Objects ---
 Adafruit_MPU6050 mpu;
+Servo escServo;
 
 // --- GLOBAL VARIABLES FOR CALIBRATION OFFSETS ---
 // Acceleration Biases (m/s²)
@@ -96,6 +105,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
+  // --- MPU6050 SETUP ---
   Serial.println("\n\nMPU6050 Initialization Started");
   
   // Initialize I2C with custom pins
@@ -121,11 +131,88 @@ void setup() {
   calibrateSensor();
   // -----------------------
   
+  // --- ESC SETUP ---
+  Serial.println("\nInitializing BLHeli_S 3D ESC...");
+  Serial.println("Commands:");
+  Serial.println("  'f' or 'F': Forward (Slow)");
+  Serial.println("  'r' or 'R': Reverse (Slow)");
+  Serial.println("  's' or 'S': Stop");
+  Serial.println("  0-9:        Specific speed levels (5=stop, 9=fast fwd, 1=fast rev)");
+
+  // ESP32Servo setup
+  escServo.setPeriodHertz(50); 
+  // Attach with the specific range your ESC expects
+  escServo.attach(ESC_PIN, ESC_MIN_PULSE, ESC_MAX_PULSE);
+
+  // --- ARMING SEQUENCE ---
+  // 3D ESCs usually arm when they receive the NEUTRAL signal (1500us)
+  Serial.println("Arming: Sending Neutral (1500us)...");
+  escServo.writeMicroseconds(ESC_NEUTRAL_PULSE);
+  
+  delay(3000); // Wait for ESC initialization beeps
+  Serial.println("ESC Arming complete. Ready for Serial commands.");
+
   delay(100);
-  Serial.println("\nStarting calibrated sensor readings...\n");
+  Serial.println("\nStarting calibrated sensor readings and ESC control loop...\n");
 }
 
 void loop() {
+  // --- ESC CONTROL LOGIC ---
+  if (Serial.available() > 0) {
+    char command = Serial.read();
+    
+    // Ignore newline or carriage return characters
+    if (command != '\n' && command != '\r') {
+        int currentPulse = ESC_NEUTRAL_PULSE;
+        bool validCommand = true;
+
+        switch (command) {
+        case 'f':
+        case 'F':
+            Serial.println("Command: Forward (Slow)");
+            currentPulse = 1545; // Slow forward
+            break;
+
+        case 'r':
+        case 'R':
+            Serial.println("Command: Reverse (Slow)");
+            currentPulse = 1420; // Slow reverse
+            break;
+
+        case 's':
+        case 'S':
+            Serial.println("Command: Stop");
+            currentPulse = ESC_NEUTRAL_PULSE;
+            break;
+
+        // Numeric mapping for granular control
+        // 0 = Full Reverse, 5 = Stop, 9 = Full Forward
+        case '0' ... '9': {
+            int val = command - '0'; // Convert char to int
+            // Map 0-9 to range 1000-2000
+            currentPulse = map(val, 0, 9, ESC_MIN_PULSE, ESC_MAX_PULSE);
+            Serial.print("Command: Speed Level ");
+            Serial.print(val);
+            Serial.print(" -> ");
+            Serial.print(currentPulse);
+            Serial.println("us");
+            break;
+        }
+
+        default:
+            Serial.print("Unknown command: ");
+            Serial.println(command);
+            validCommand = false;
+            break;
+        }
+
+        if (validCommand) {
+            escServo.writeMicroseconds(currentPulse);
+        }
+    }
+  }
+
+  // --- MPU6050 READING LOGIC ---
   // Get sensor event (RAW readings)
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);

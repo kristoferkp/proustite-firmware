@@ -35,6 +35,7 @@ public:
 
     void begin();
     void setTargetSpeed(float speed);
+    void setPwm(int pwm); // Open loop control
     void update();
     void stop();
 

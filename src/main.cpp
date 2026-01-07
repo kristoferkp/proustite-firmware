@@ -9,29 +9,29 @@
 #define MOTOR1_PWM D9
 #define MOTOR1_DIR1 D8
 #define MOTOR1_DIR2 D7
-#define MOTOR1_ENC_A D12
-#define MOTOR1_ENC_B D11
+#define MOTOR1_ENC_A D11
+#define MOTOR1_ENC_B D12
 
 // Motor 2 - Front-Right at 60° (π/3)
 #define MOTOR2_PWM D0
 #define MOTOR2_DIR1 A3
 #define MOTOR2_DIR2 A4
-#define MOTOR2_ENC_A A0
-#define MOTOR2_ENC_B A1
+#define MOTOR2_ENC_A A1
+#define MOTOR2_ENC_B A0
 
 // Motor 3 - Back at 180° (π)
 #define MOTOR3_PWM D1
-#define MOTOR3_DIR1 A6
-#define MOTOR3_DIR2 D3
-#define MOTOR3_ENC_A D6
-#define MOTOR3_ENC_B D4
+#define MOTOR3_DIR1 D3
+#define MOTOR3_DIR2 A6
+#define MOTOR3_ENC_A D4
+#define MOTOR3_ENC_B D6
 
 // ===== PID TUNING PARAMETERS =====
 // Motor specs: 530 RPM no-load @ 12V, 8.5 kg⋅cm stall torque
 // Adjust these values based on your motors and robot characteristics
-#define KP 1.5  // Proportional gain - moderate for 530 RPM motors
-#define KI 0.3  // Integral gain - helps overcome friction
-#define KD 0.02 // Derivative gain - damping for high-speed motors
+float motor1_kp = 1.7, motor1_ki = 0.16, motor1_kd = 0;
+float motor2_kp = 1.3, motor2_ki = 0.16, motor2_kd = 0;
+float motor3_kp = 1.6, motor3_ki = 0.16, motor3_kd = 0;
 
 // ===== ROBOT DIMENSIONS =====
 #define WHEEL_RADIUS 0.035 // Wheel radius in meters (35mm)
@@ -45,11 +45,11 @@
 
 // ===== GLOBAL OBJECTS =====
 MotorController motor1(MOTOR1_PWM, MOTOR1_DIR1, MOTOR1_DIR2,
-                       MOTOR1_ENC_A, MOTOR1_ENC_B, KP, KI, KD);
+                       MOTOR1_ENC_A, MOTOR1_ENC_B, motor1_kp, motor1_ki, motor1_kd);
 MotorController motor2(MOTOR2_PWM, MOTOR2_DIR1, MOTOR2_DIR2,
-                       MOTOR2_ENC_A, MOTOR2_ENC_B, KP, KI, KD);
+                       MOTOR2_ENC_A, MOTOR2_ENC_B, motor2_kp, motor2_ki, motor2_kd);
 MotorController motor3(MOTOR3_PWM, MOTOR3_DIR1, MOTOR3_DIR2,
-                       MOTOR3_ENC_A, MOTOR3_ENC_B, KP, KI, KD);
+                       MOTOR3_ENC_A, MOTOR3_ENC_B, motor3_kp, motor3_ki, motor3_kd);
 
 OmniWheelDrive robot(&motor1, &motor2, &motor3, WHEEL_RADIUS, ROBOT_RADIUS);
 
@@ -68,6 +68,7 @@ void emergencyStop();
 void processCommand(String cmd);
 void handleVelocityCommand(String cmd);
 void handlePIDCommand(String cmd);
+void runAutoTune(int motorId);
 void sendStatus();
 void printRobotInfo();
 
@@ -212,6 +213,12 @@ void processCommand(String cmd)
   {
     handlePIDCommand(cmd);
   }
+  else if (cmd.startsWith("TUNE,"))
+  {
+    int comma = cmd.indexOf(',');
+    int motorId = cmd.substring(comma + 1).toInt();
+    runAutoTune(motorId);
+  }
   else
   {
     Serial.println("ERROR:UNKNOWN_COMMAND");
@@ -251,31 +258,72 @@ void handleVelocityCommand(String cmd)
 
 void handlePIDCommand(String cmd)
 {
-  // Parse: PID,kp,ki,kd
-  int firstComma = cmd.indexOf(',');
-  int secondComma = cmd.indexOf(',', firstComma + 1);
-  int thirdComma = cmd.indexOf(',', secondComma + 1);
-
-  if (firstComma == -1 || secondComma == -1 || thirdComma == -1)
+  // Parse: PID,kp,ki,kd OR PID,motorId,kp,ki,kd
+  int commas = 0;
+  for (unsigned int i = 0; i < cmd.length(); i++)
   {
-    Serial.println("ERROR:INVALID_PID_FORMAT");
-    return;
+    if (cmd[i] == ',')
+      commas++;
   }
 
-  float kp = cmd.substring(firstComma + 1, secondComma).toFloat();
-  float ki = cmd.substring(secondComma + 1, thirdComma).toFloat();
-  float kd = cmd.substring(thirdComma + 1).toFloat();
+  if (commas == 3)
+  {
+    // Global set: PID,kp,ki,kd
+    int firstComma = cmd.indexOf(',');
+    int secondComma = cmd.indexOf(',', firstComma + 1);
+    int thirdComma = cmd.indexOf(',', secondComma + 1);
 
-  motor1.setPIDGains(kp, ki, kd);
-  motor2.setPIDGains(kp, ki, kd);
-  motor3.setPIDGains(kp, ki, kd);
+    float kp = cmd.substring(firstComma + 1, secondComma).toFloat();
+    float ki = cmd.substring(secondComma + 1, thirdComma).toFloat();
+    float kd = cmd.substring(thirdComma + 1).toFloat();
 
-  Serial.print("OK:PID_SET,");
-  Serial.print(kp, 3);
-  Serial.print(",");
-  Serial.print(ki, 3);
-  Serial.print(",");
-  Serial.println(kd, 3);
+    motor1.setPIDGains(kp, ki, kd);
+    motor2.setPIDGains(kp, ki, kd);
+    motor3.setPIDGains(kp, ki, kd);
+    
+    // Update global vars
+    motor1_kp = motor2_kp = motor3_kp = kp;
+    motor1_ki = motor2_ki = motor3_ki = ki;
+    motor1_kd = motor2_kd = motor3_kd = kd;
+
+    Serial.print("OK:PID_SET_ALL,");
+    Serial.print(kp, 3);
+    Serial.print(",");
+    Serial.print(ki, 3);
+    Serial.print(",");
+    Serial.println(kd, 3);
+  }
+  else if (commas == 4)
+  {
+    // Specific set: PID,motorId,kp,ki,kd
+    int c1 = cmd.indexOf(',');
+    int c2 = cmd.indexOf(',', c1 + 1);
+    int c3 = cmd.indexOf(',', c2 + 1);
+    int c4 = cmd.indexOf(',', c3 + 1);
+
+    int motorId = cmd.substring(c1 + 1, c2).toInt();
+    float kp = cmd.substring(c2 + 1, c3).toFloat();
+    float ki = cmd.substring(c3 + 1, c4).toFloat();
+    float kd = cmd.substring(c4 + 1).toFloat();
+
+    if (motorId == 1) { motor1.setPIDGains(kp, ki, kd); motor1_kp = kp; motor1_ki = ki; motor1_kd = kd; }
+    else if (motorId == 2) { motor2.setPIDGains(kp, ki, kd); motor2_kp = kp; motor2_ki = ki; motor2_kd = kd; }
+    else if (motorId == 3) { motor3.setPIDGains(kp, ki, kd); motor3_kp = kp; motor3_ki = ki; motor3_kd = kd; }
+    else { Serial.println("ERROR:INVALID_MOTOR_ID"); return; }
+
+    Serial.print("OK:PID_SET_MOTOR_");
+    Serial.print(motorId);
+    Serial.print(",");
+    Serial.print(kp, 3);
+    Serial.print(",");
+    Serial.print(ki, 3);
+    Serial.print(",");
+    Serial.println(kd, 3);
+  }
+  else
+  {
+    Serial.println("ERROR:INVALID_PID_FORMAT");
+  }
 }
 
 void sendStatus()
@@ -369,4 +417,122 @@ void emergencyStop()
   motor1.resetPID();
   motor2.resetPID();
   motor3.resetPID();
+}
+
+void runAutoTune(int motorId)
+{
+  MotorController* targetMotor = nullptr;
+  float* targetKp = nullptr;
+  float* targetKi = nullptr;
+  float* targetKd = nullptr;
+
+  if (motorId == 1) { targetMotor = &motor1; targetKp = &motor1_kp; targetKi = &motor1_ki; targetKd = &motor1_kd; }
+  else if (motorId == 2) { targetMotor = &motor2; targetKp = &motor2_kp; targetKi = &motor2_ki; targetKd = &motor2_kd; }
+  else if (motorId == 3) { targetMotor = &motor3; targetKp = &motor3_kp; targetKi = &motor3_ki; targetKd = &motor3_kd; }
+  else {
+    Serial.println("ERROR:INVALID_MOTOR_ID");
+    return;
+  }
+
+  Serial.print("INFO:STARTING_ITERATIVE_TUNE_MOTOR_"); Serial.println(motorId);
+  
+  // Stop all motors and disable main loop
+  robot.stopAll();
+  motorsEnabled = false; 
+  
+  // Reset PID
+  targetMotor->resetPID();
+  
+  float tunedKp = 0.0;
+  float tunedKi = 0.0;
+  float tunedKd = 0.0; // We will leave Kd at 0 for this simple tune
+  
+  float targetRPM = 150.0; // Target speed for tuning
+  
+  Serial.println("INFO:PHASE_1_TUNING_KP");
+  targetMotor->setTargetSpeed(targetRPM);
+  
+  // Phase 1: Increase Kp until we reach ~70% of target speed
+  // This ensures we have enough P-gain to move, but leaves room for I-gain
+  for (float kp = 0.1; kp < 10.0; kp += 0.1) {
+    targetMotor->setPIDGains(kp, 0, 0);
+    
+    // Run for 300ms to let speed stabilize
+    unsigned long startWait = millis();
+    float avgSpeed = 0;
+    int samples = 0;
+    
+    while (millis() - startWait < 300) {
+      targetMotor->update();
+      if (millis() - startWait > 100) { // Ignore first 100ms transient
+         avgSpeed += abs(targetMotor->getCurrentSpeed());
+         samples++;
+      }
+      delay(5);
+    }
+    if (samples > 0) avgSpeed /= samples;
+    
+    Serial.print("INFO:Kp="); Serial.print(kp);
+    Serial.print(",Speed="); Serial.println(avgSpeed);
+    
+    if (avgSpeed >= targetRPM * 0.70) {
+      tunedKp = kp;
+      break;
+    }
+  }
+  
+  if (tunedKp == 0) {
+     Serial.println("ERROR:TUNE_FAILED_MOTOR_DID_NOT_REACH_SPEED");
+     targetMotor->stop();
+     return;
+  }
+  
+  Serial.println("INFO:PHASE_2_TUNING_KI");
+  
+  // Phase 2: Increase Ki until error is minimized
+  // We keep the Kp we found
+  for (float ki = 0.01; ki < 5.0; ki += 0.05) {
+    targetMotor->setPIDGains(tunedKp, ki, 0);
+    
+    // Run for 500ms to let integrator work
+    unsigned long startWait = millis();
+    float avgError = 0;
+    int samples = 0;
+    
+    while (millis() - startWait < 500) {
+      targetMotor->update();
+      if (millis() - startWait > 200) {
+         float error = abs(targetRPM - abs(targetMotor->getCurrentSpeed()));
+         avgError += error;
+         samples++;
+      }
+      delay(5);
+    }
+    if (samples > 0) avgError /= samples;
+    
+    Serial.print("INFO:Ki="); Serial.print(ki);
+    Serial.print(",AvgError="); Serial.println(avgError);
+    
+    // If error is less than 5% of target, we are good
+    if (avgError < targetRPM * 0.05) {
+      tunedKi = ki;
+      break;
+    }
+  }
+  
+  // Stop motor
+  targetMotor->stop();
+  
+  // Update global variables
+  *targetKp = tunedKp;
+  *targetKi = tunedKi;
+  *targetKd = tunedKd;
+  
+  // Apply final values
+  targetMotor->setPIDGains(tunedKp, tunedKi, tunedKd);
+  
+  Serial.print("OK:TUNED_MOTOR_"); Serial.print(motorId);
+  Serial.print(",Kp="); Serial.print(tunedKp);
+  Serial.print(",Ki="); Serial.print(tunedKi);
+  Serial.println(",Kd=0.00");
 }

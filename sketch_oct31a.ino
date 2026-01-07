@@ -137,7 +137,6 @@ void setup() {
   Serial.println("  'f' or 'F': Forward (Slow)");
   Serial.println("  'r' or 'R': Reverse (Slow)");
   Serial.println("  's' or 'S': Stop");
-  Serial.println("  0-9:        Specific speed levels (5=stop, 9=fast fwd, 1=fast rev)");
 
   // ESP32Servo setup
   escServo.setPeriodHertz(50); 
@@ -185,20 +184,6 @@ void loop() {
             currentPulse = ESC_NEUTRAL_PULSE;
             break;
 
-        // Numeric mapping for granular control
-        // 0 = Full Reverse, 5 = Stop, 9 = Full Forward
-        case '0' ... '9': {
-            int val = command - '0'; // Convert char to int
-            // Map 0-9 to range 1000-2000
-            currentPulse = map(val, 0, 9, ESC_MIN_PULSE, ESC_MAX_PULSE);
-            Serial.print("Command: Speed Level ");
-            Serial.print(val);
-            Serial.print(" -> ");
-            Serial.print(currentPulse);
-            Serial.println("us");
-            break;
-        }
-
         default:
             Serial.print("Unknown command: ");
             Serial.println(command);
@@ -228,31 +213,20 @@ void loop() {
   // ------------------------------------
 
   // Print timestamp
-  Serial.print("Time: ");
-  Serial.print(millis());
-  Serial.println(" ms");
-  
+  Serial.print("time: " + String(millis()) + " ms\n");
+
   // Print CALIBRATED accelerometer readings (m/s²)
-  Serial.print("Accel Calibrated (m/s²): ");
-  Serial.print("X=");
-  Serial.print(cal_accel_x, 3); // Print with 3 decimal places
-  Serial.print(" Y=");
-  Serial.print(cal_accel_y, 3);
-  Serial.print(" Z=");
-  Serial.println(cal_accel_z, 3);
+  Serial.print("accel_x: " + String(cal_accel_x, 3) + ", ");
+  Serial.print("accel_y: " + String(cal_accel_y, 3) + ", ");
+  Serial.print("accel_z: " + String(cal_accel_z, 3) + "\n");
   
   // Print CALIBRATED gyroscope readings (rad/s)
-  Serial.print("Gyro Calibrated (rad/s): ");
-  Serial.print("X=");
-  Serial.print(cal_gyro_x, 3);
-  Serial.print(" Y=");
-  Serial.print(cal_gyro_y, 3);
-  Serial.print(" Z=");
-  Serial.println(cal_gyro_z, 3);
+  Serial.print("gyro_x: " + String(cal_gyro_x, 3) + ", ");
+  Serial.print("gyro_y: " + String(cal_gyro_y, 3) + ", ");
+  Serial.print("gyro_z: " + String(cal_gyro_z, 3) + "\n");
   
   // Print temperature (°C)
-  Serial.print("Temperature (°C): ");
-  Serial.println(temp.temperature, 2);
+  Serial.print("temp_c: " + String(temp.temperature, 2) + "\n");
   
   Serial.println("---");
   

@@ -43,6 +43,22 @@ void MotorController::setTargetSpeed(float speed)
     pid.setSetpoint(speed);
 }
 
+void MotorController::setPwm(int pwm)
+{
+    if (pwm >= 0)
+    {
+        digitalWrite(dirPin1, HIGH);
+        digitalWrite(dirPin2, LOW);
+        analogWrite(pwmPin, constrain(pwm, 0, 255));
+    }
+    else
+    {
+        digitalWrite(dirPin1, LOW);
+        digitalWrite(dirPin2, HIGH);
+        analogWrite(pwmPin, constrain(abs(pwm), 0, 255));
+    }
+}
+
 void MotorController::update()
 {
     // Calculate current speed based on encoder

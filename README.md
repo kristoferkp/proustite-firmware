@@ -1,6 +1,8 @@
 # Proustite firmware
 This repository contains the Arduino files flashed to the ESP32/Arduino and the PlatformIO code for the Nucleo G431KB with a custom shield.
 
+The main repository can be found [here](https://github.com/kristoferkp/proustite-deltax/tree/main).
+
 The repository houses code for my robot that was built for the DeltaX 2026 advanced robot football competition (which I won).
 Veni, vidi, vici.
 

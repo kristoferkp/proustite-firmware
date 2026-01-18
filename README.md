@@ -36,7 +36,7 @@ If you really wanted to you could wire up the ESC and MPU6050 directly to the Ra
 
 The motor driver boards are custom [Robotont](https://robotont.ut.ee/en/technical-documentation/) hardware. I do not like the micro-match connectors on those, but they will do.
 
-I would recommend swithing out the Nucleo and the shield for newer [Robotont](https://github.com/robotont/robotont-hardware-x-2023-replication-package) hardware. The shield's pinout can be found [here](https://github.com/robotont/robotont-firmware/tree/accdbe4c774cda8ef2a9e7ea0e95ad34a170a936/include). Do note that the mbed project used in the Robotont firmware has been [sunset by ARM](https://os.mbed.com/blog/entry/Important-Update-on-Mbed/).
+I would recommend swithing out the Nucleo and the shield for newer [Robotont](https://github.com/robotont/robotont-hardware-x-2023-replication-package) hardware. The shields pinout can be found [here](https://github.com/robotont/robotont-firmware/tree/accdbe4c774cda8ef2a9e7ea0e95ad34a170a936/include). Do note that the mbed project used in the Robotont firmware has been [sunset by ARM](https://os.mbed.com/blog/entry/Important-Update-on-Mbed/).
 
 ### Nucleo shield pins
 ```cpp
